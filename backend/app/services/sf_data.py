@@ -6,12 +6,13 @@ Provides spatial queries to find sweeping schedules near a given location.
 """
 
 import logging
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Any
 import json
 import httpx
 
 from shapely.geometry import LineString, Point
 from shapely.ops import nearest_points
+from shapely.strtree import STRtree
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,8 @@ class SweepDataCache:
 
     def __init__(self):
         self.data: List[dict] = []
-        self.spatial_index: Optional[Any] = None  # R-tree spatial index
+        self.spatial_index: Optional[STRtree] = None
+        self.geometries: List[Any] = []
         self.last_updated: Optional[str] = None
 
     async def load_data(self, force_refresh: bool = False):
@@ -60,23 +62,23 @@ class SweepDataCache:
         """
         Build a spatial index for fast proximity queries.
 
-        Uses R-tree to index all street segment geometries.
+        Uses Shapely's STRtree for spatial indexing.
         """
-        from rtree import index
+        self.geometries = []
 
-        # Create spatial index
-        self.spatial_index = index.Index()
-
-        for idx, record in enumerate(self.data):
+        for record in self.data:
             if record.get("line"):
                 coords = record["line"]["coordinates"]
                 line = LineString(coords)
+                self.geometries.append(line)
+            else:
+                self.geometries.append(None)
 
-                # Insert into R-tree with bounding box
-                minx, miny, maxx, maxy = line.bounds
-                self.spatial_index.insert(idx, (minx, miny, maxx, maxy))
+        # Create STRtree from non-None geometries
+        valid_geometries = [g for g in self.geometries if g is not None]
+        self.spatial_index = STRtree(valid_geometries)
 
-        logger.info(f"Built spatial index with {self.spatial_index.count()} entries")
+        logger.info(f"Built spatial index with {len(valid_geometries)} entries")
 
     async def find_nearest(
         self,
@@ -101,42 +103,36 @@ class SweepDataCache:
         # Create point from coordinates
         point = Point(longitude, latitude)
 
-        # Search in bounding box first (approximate degrees to meters)
-        # 1 degree latitude ≈ 111km, 1 degree longitude varies by latitude
-        lat_degree = max_distance / 111000
-        lon_degree = max_distance / (111000 * abs(latitude))
-
-        bbox = (
-            longitude - lon_degree,
-            latitude - lat_degree,
-            longitude + lon_degree,
-            latitude + lat_degree,
-        )
-
-        # Find candidates within bounding box
-        candidates = list(self.spatial_index.intersection(bbox))
-
-        if not candidates:
-            logger.warning(f"No sweeping routes found near ({latitude}, {longitude})")
-            return None
-
-        # Find nearest among candidates
+        # Simple approach: iterate through all geometries and find nearest
+        # This is O(n) but fast enough for 1000 records
         nearest = None
         min_dist = float("inf")
 
-        for idx in candidates:
-            record = self.data[idx]
-            if record.get("line"):
-                coords = record["line"]["coordinates"]
-                line = LineString(coords)
+        for orig_idx, geom in enumerate(self.geometries):
+            if geom is None:
+                continue
 
-                # Calculate distance
-                dist = point.distance(line)
+            # Calculate distance
+            dist = point.distance(geom)
 
-                if dist < min_dist:
-                    min_dist = dist
-                    nearest = record
-                    nearest["_distance_degrees"] = dist
+            if dist < min_dist:
+                min_dist = dist
+                nearest = self.data[orig_idx].copy()
+                nearest["_distance_degrees"] = dist
+
+        if nearest is None:
+            logger.warning(f"No sweeping routes found near ({latitude}, {longitude})")
+            return None
+
+        # Check if within max distance (convert degrees to approximate meters)
+        meters_per_degree = 111000 * (1 - 0.5 * abs(latitude) / 90)
+        distance_meters = min_dist * meters_per_degree
+
+        if distance_meters > max_distance:
+            logger.warning(
+                f"No sweeping routes within {max_distance}m of ({latitude}, {longitude})"
+            )
+            return None
 
         # Convert degrees to approximate meters
         # (rough approximation - 1 degree ≈ 111km at equator)
