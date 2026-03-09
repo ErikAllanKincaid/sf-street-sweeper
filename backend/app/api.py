@@ -54,7 +54,7 @@ async def get_sweep_schedule(request: AddressRequest):
     """
     Get the sweeping schedule for a given address.
 
-    Takes an address, geocodes it, finds the nearest sweeping route,
+    Takes an address, geocodes it, finds all nearby sweeping routes,
     and returns the schedule information.
     """
     try:
@@ -64,23 +64,23 @@ async def get_sweep_schedule(request: AddressRequest):
         # Geocode the address
         coords = await geocoding_service.geocode(request.address)
 
-        # Find nearest sweeping route
-        sweep_info = await sweeping_service.find_nearest_sweep(
+        # Find ALL nearby sweeping routes (not just nearest)
+        all_sweeps = await sweeping_service.find_all_sweeps(
             coords["latitude"],
             coords["longitude"],
         )
 
-        if not sweep_info:
+        if not all_sweeps:
             raise HTTPException(
                 status_code=404, detail="No sweeping schedule found near this location"
             )
 
-        # Format response to match SweepScheduleResponse
+        # Format response - return all options so user can pick correct side
         return {
             "address": coords["address"],
             "latitude": coords["latitude"],
             "longitude": coords["longitude"],
-            "schedule": [sweep_info],
+            "schedule": all_sweeps,
         }
 
     except HTTPException:
