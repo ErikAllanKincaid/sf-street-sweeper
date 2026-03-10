@@ -62,9 +62,26 @@ export default function Home() {
   const [lat, setLat] = useState(null)
   const [lng, setLng] = useState(null)
   
-  // Toggle side selection
+  // Toggle side selection and re-search if we have an address
   const toggleSide = (sideKey) => {
-    setSides(prev => ({ ...prev, [sideKey]: !prev[sideKey] }))
+    const newSides = { ...sides, [sideKey]: !sides[sideKey] }
+    setSides(newSides)
+    
+    // If we already have an address, re-search with the new side
+    if (address.trim()) {
+      const newSelected = Object.keys(newSides).filter(s => newSides[s])
+      fetch('/api/v1/sweep', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          address, 
+          ...(newSelected.length > 0 && { side: newSelected[0] }) 
+        }),
+      })
+        .then(res => res.json())
+        .then(data => setSchedule(data))
+        .catch(err => setError(err.message))
+    }
   }
 
   // Filter sides
