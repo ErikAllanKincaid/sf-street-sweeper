@@ -152,6 +152,45 @@ export default function Home() {
     alert('Saved! (Demo)')
   }
   
+  const addToCalendar = async () => {
+    if (!schedule || !schedule.schedule || schedule.schedule.length === 0) return
+    
+    const sweep = schedule.schedule[0]
+    
+    try {
+      const res = await fetch('/api/v1/calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          address: schedule.address,
+          corridor: sweep.corridor,
+          blockside: sweep.blockside,
+          limits: sweep.limits,
+          weekday: sweep.weekday,
+          fullname: sweep.fullname,
+          fromhour: sweep.fromhour,
+          tohour: sweep.tohour,
+          week1: sweep.week1,
+          week2: sweep.week2,
+          week3: sweep.week3,
+          week4: sweep.week4,
+          week5: sweep.week5,
+          reminder_hours: 24,
+        }),
+      })
+      
+      if (!res.ok) throw new Error('Failed to create calendar event')
+      
+      const data = await res.json()
+      
+      // Open Google Calendar in new tab
+      window.open(data.calendar_url, '_blank')
+      
+    } catch (err) {
+      alert('Failed to create calendar event: ' + err.message)
+    }
+  }
+  
   return (
     <div>
       <div className="search-box">
@@ -274,6 +313,13 @@ export default function Home() {
             onClick={saveLocation}
           >
             Save Location(s)
+          </button>
+          <button 
+            className="btn btn-primary" 
+            style={{ marginTop: '0.5rem', width: '100%' }}
+            onClick={addToCalendar}
+          >
+            Add to Google Calendar (24hr before)
           </button>
         </div>
       )}

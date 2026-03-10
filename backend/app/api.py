@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from app.services.sf_data import SFSweepingService
 from app.services.geocoding import GeocodingService
+from app.services.calendar import generate_calendar_url, get_sweep_dates
 from app.models import (
     AddressRequest,
     SweepScheduleResponse,
@@ -100,3 +101,69 @@ async def get_sweep_schedule(request: AddressRequest):
 @router.post("/subscribe")
 async def subscribe(request: SubscriptionRequest):
     return SubscriptionResponse(success=True, message="OK", subscription_id="demo")
+
+
+class CalendarEventRequest(BaseModel):
+    """Request to generate a calendar event for street sweeping."""
+
+    address: str
+    corridor: str
+    blockside: str
+    limits: str
+    weekday: str
+    fullname: str
+    fromhour: int
+    tohour: int
+    week1: bool
+    week2: bool
+    week3: bool
+    week4: bool
+    week5: bool
+    reminder_hours: int = 24
+
+
+class CalendarEventResponse(BaseModel):
+    """Response with calendar event URL."""
+
+    calendar_url: str
+    next_sweep_dates: list[str]
+
+
+@router.post("/calendar")
+async def create_calendar_event(request: CalendarEventRequest):
+    """Generate a Google Calendar event for street sweeping reminder."""
+    try:
+        # Build sweep block from request
+        sweep = {
+            "corridor": request.corridor,
+            "blockside": request.blockside,
+            "limits": request.limits,
+            "weekday": request.weekday,
+            "fullname": request.fullname,
+            "fromhour": request.fromhour,
+            "tohour": request.tohour,
+            "week1": request.week1,
+            "week2": request.week2,
+            "week3": request.week3,
+            "week4": request.week4,
+            "week5": request.week5,
+        }
+
+        # Generate calendar URL
+        calendar_url = generate_calendar_url(
+            sweep=sweep,
+            address=request.address,
+            reminder_hours=request.reminder_hours,
+        )
+
+        # Get next sweep dates
+        dates = get_sweep_dates(sweep, months=3)
+        date_strings = [d.strftime("%Y-%m-%d %H:%M") for d in dates[:8]]
+
+        return CalendarEventResponse(
+            calendar_url=calendar_url,
+            next_sweep_dates=date_strings,
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
