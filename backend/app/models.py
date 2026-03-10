@@ -22,6 +22,9 @@ class AddressRequest(BaseModel):
     address: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    side: Optional[str] = Field(
+        None, description="Side of street: E, W, N, S, NE, NW, SE, SW"
+    )
 
 
 class SweepBlock(BaseModel):

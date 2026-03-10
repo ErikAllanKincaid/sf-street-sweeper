@@ -16,11 +16,14 @@ from shapely.strtree import STRtree
 
 logger = logging.getLogger(__name__)
 
-# SF Open Data API endpoint for street sweeping schedule
-SF_DATA_URL = "https://data.sfgov.org/resource/yhqp-riqs.json"
+# SF Open Data API endpoint for street sweeping schedule (ARCHIVED SNAPSHOT)
+# Note: xsry-uuyt is the frozen Jan 27, 2025 snapshot (37,878 rows)
+# yhqp-riqs is BROKEN/UNRELIABLE (only 220 rows, under maintenance)
+SF_DATA_URL = "https://data.sfgov.org/resource/xsry-uuyt.json?$limit=40000"
 
 # Maximum distance in meters to consider a street segment as "near"
-MAX_SEARCH_RADIUS_METERS = 50
+MAX_SEARCH_RADIUS_METERS = 200  # Increased for broader neighborhood search
+MAX_SEARCH_RADIUS_METERS_WIDE = 1000  # Wide search to find ANY nearby street
 
 
 class SweepDataCache:
@@ -124,7 +127,8 @@ class SweepDataCache:
             logger.warning(f"No sweeping routes found near ({latitude}, {longitude})")
             return None
 
-        # Check if within max distance (convert degrees to approximate meters)
+        # Always return the nearest street, even beyond max_distance
+        # This allows us to show available options to users
         meters_per_degree = 111000 * (1 - 0.5 * abs(latitude) / 90)
         distance_meters = min_dist * meters_per_degree
 
@@ -132,10 +136,11 @@ class SweepDataCache:
             logger.warning(
                 f"No sweeping routes within {max_distance}m of ({latitude}, {longitude})"
             )
-            return None
+        # Note: We still return the record anyway so user can see options
 
         # Convert degrees to approximate meters
         nearest["_distance_meters"] = min_dist * meters_per_degree
+        nearest["_distance_meters_warning"] = distance_meters > max_distance
 
         return nearest
 
@@ -143,11 +148,11 @@ class SweepDataCache:
         self,
         latitude: float,
         longitude: float,
-        max_distance: float = MAX_SEARCH_RADIUS_METERS * 3,
+        max_distance: float = MAX_SEARCH_RADIUS_METERS,
     ) -> List[dict]:
         """
         Find all street sweeping routes near a given point.
-        Returns multiple options to handle different sides of the street.
+        Returns nearby streets even if on different corridor (to show available options).
 
         Args:
             latitude: Latitude of the search point.
@@ -163,17 +168,19 @@ class SweepDataCache:
         # Create point from coordinates
         point = Point(longitude, latitude)
 
-        # Get corridor (street name) from nearest segment
-        nearest = await self.find_nearest(
+        # Find the nearest ANY street (not just same corridor)
+        nearest_any = await self.find_nearest(
             latitude, longitude, max_distance=max_distance
         )
-        if not nearest:
+
+        if not nearest_any:
             return []
 
-        target_corridor = nearest.get("corridor", "")
-        logger.info(f"Looking for all segments on {target_corridor}")
+        # Get the corridor of the nearest street
+        target_corridor = nearest_any.get("corridor", "")
+        logger.info(f"Nearest corridor: {target_corridor}")
 
-        # Find all segments on same street within distance
+        # Find ALL segments (any corridor), sorted by distance
         results = []
 
         for orig_idx, geom in enumerate(self.geometries):
@@ -182,10 +189,6 @@ class SweepDataCache:
 
             record = self.data[orig_idx]
 
-            # Only include segments on the same corridor
-            if record.get("corridor") != target_corridor:
-                continue
-
             # Calculate distance
             dist = point.distance(geom)
 
@@ -193,39 +196,18 @@ class SweepDataCache:
             meters_per_degree = 111000 * (1 - 0.5 * abs(latitude) / 90)
             dist_meters = dist * meters_per_degree
 
-            if dist_meters <= max_distance:
-                result = record.copy()
-                result["_distance_meters"] = dist_meters
-                results.append(result)
+            # Always include, sorted by distance
+            result = record.copy()
+            result["_distance_meters"] = dist_meters
+            results.append(result)
 
         # Sort by distance
         results.sort(key=lambda x: x.get("_distance_meters", float("inf")))
 
-        logger.info(f"Found {len(results)} segments on {target_corridor}")
-
+        logger.info(f"Found {len(results)} segments")
         return results
 
-        if nearest is None:
-            logger.warning(f"No sweeping routes found near ({latitude}, {longitude})")
-            return None
-
-        # Check if within max distance (convert degrees to approximate meters)
-        meters_per_degree = 111000 * (1 - 0.5 * abs(latitude) / 90)
-        distance_meters = min_dist * meters_per_degree
-
-        if distance_meters > max_distance:
-            logger.warning(
-                f"No sweeping routes within {max_distance}m of ({latitude}, {longitude})"
-            )
-            return None
-
-        # Convert degrees to approximate meters
-        # (rough approximation - 1 degree ≈ 111km at equator)
-        if nearest:
-            meters_per_degree = 111000 * (1 - 0.5 * abs(latitude) / 90)
-            nearest["_distance_meters"] = min_dist * meters_per_degree
-
-        return nearest
+        # Dead code below, removed
 
 
 class SFSweepingService:
@@ -288,6 +270,7 @@ class SFSweepingService:
         latitude: float,
         longitude: float,
         max_distance: float = MAX_SEARCH_RADIUS_METERS * 3,
+        limit: int = 50,
     ) -> List[dict]:
         """
         Find all sweeping schedules near a location.
@@ -307,6 +290,10 @@ class SFSweepingService:
         # Find all nearby
         all_nearby = await self.cache.find_all_nearby(latitude, longitude, max_distance)
 
+        # Apply limit
+        if limit:
+            all_nearby = all_nearby[:limit]
+
         if not all_nearby:
             return []
 
@@ -316,7 +303,7 @@ class SFSweepingService:
             schedule = {
                 "corridor": record.get("corridor"),
                 "limits": record.get("limits"),
-                "blockside": record.get("blockside"),
+                "blockside": record.get("blockside", ""),
                 "weekday": record.get("weekday"),
                 "fullname": record.get("fullname"),
                 "fromhour": int(record.get("fromhour", 0)),
@@ -331,6 +318,67 @@ class SFSweepingService:
             schedules.append(schedule)
 
         return schedules
+
+    async def get_available_streets(
+        self,
+        latitude: float,
+        longitude: float,
+    ):
+        """
+        Get all corridor names (street names) available in the dataset.
+        Useful when no exact match is found for a location.
+
+        Args:
+            latitude: Latitude (used for distance calculation)
+            longitude: Longitude (used for distance calculation)
+
+        Returns:
+            Sorted list of corridor names.
+        """
+        await self.cache.load_data()
+
+        point = Point(longitude, latitude)
+        available_corridors = []
+
+        for orig_idx, geom in enumerate(self.cache.geometries):
+            if geom is None:
+                continue
+
+            corridor = self.cache.data[orig_idx].get("corridor")
+            if corridor and corridor not in available_corridors:
+                available_corridors.append(corridor)
+
+        # Calculate and display distances as a courtesy
+        corridor_details = []
+        for corridor in available_corridors:
+            # Find this corridor's closest point
+            corridor_geometries = [
+                g
+                for idx, g in enumerate(self.cache.geometries)
+                if self.cache.data[idx].get("corridor") == corridor and g is not None
+            ]
+            if corridor_geometries:
+                # Get closest for this corridor
+                closest_geom = corridor_geometries[0]
+                dist = point.distance(closest_geom)
+                meters_per_degree = 111000 * (1 - 0.5 * abs(latitude) / 90)
+                dist_meters = dist * meters_per_degree
+                corridor_details.append(
+                    {
+                        "corridor": corridor,
+                        "distance_meters": dist_meters,
+                        "week1": self.cache.data[
+                            next(
+                                i
+                                for i, g in enumerate(self.cache.geometries)
+                                if self.cache.data[i].get("corridor") == corridor
+                            )
+                        ].get("week1", "N/A"),
+                    }
+                )
+
+        corridor_details.sort(key=lambda x: x["distance_meters"])
+        return corridor_details
 
 
 # Import Any for type hint

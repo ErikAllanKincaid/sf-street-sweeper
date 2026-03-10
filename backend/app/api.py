@@ -1,81 +1,61 @@
 """
 API routes for the SF Street Sweeper backend.
-Defines endpoints for schedule lookup, geocoding, and subscriptions.
 """
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.services.sf_data import SFSweepingService
 from app.services.geocoding import GeocodingService
 from app.models import (
     AddressRequest,
-    AddressResponse,
     SweepScheduleResponse,
-    SavedLocation,
     SubscriptionRequest,
     SubscriptionResponse,
 )
 
 router = APIRouter()
-
-# Service instances - in production these would be dependency-injected
 sweeping_service = SFSweepingService()
 geocoding_service = GeocodingService()
 
 
 @router.get("/")
 async def root():
-    """Root endpoint with API info."""
-    return {
-        "name": "SF Street Sweeper API",
-        "version": "0.1.0",
-        "docs": "/docs",
-    }
+    return {"status": "ok"}
 
 
-@router.post("/geocode", response_model=AddressResponse)
+@router.post("/geocode")
 async def geocode_address(request: AddressRequest):
-    """
-    Geocode an address to coordinates.
-
-    Takes a street address and returns latitude/longitude.
-    Uses Nominatim (OpenStreetMap) for geocoding.
-    """
-    try:
-        result = await geocoding_service.geocode(request.address)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    result = await geocoding_service.geocode(request.address)
+    return result
 
 
-@router.post("/sweep", response_model=SweepScheduleResponse)
+@router.post("/sweep")
 async def get_sweep_schedule(request: AddressRequest):
-    """
-    Get the sweeping schedule for a given address.
-
-    Takes an address, geocodes it, finds all nearby sweeping routes,
-    and returns the schedule information.
-    """
+    """Get sweeping schedule for address."""
     try:
         if not request.address:
             raise HTTPException(status_code=400, detail="Address is required")
 
-        # Geocode the address
         coords = await geocoding_service.geocode(request.address)
 
-        # Find ALL nearby sweeping routes (not just nearest)
+        # Get sweeps within 150m
         all_sweeps = await sweeping_service.find_all_sweeps(
             coords["latitude"],
             coords["longitude"],
+            max_distance=150,
+            limit=50,
         )
 
-        if not all_sweeps:
-            raise HTTPException(
-                status_code=404, detail="No sweeping schedule found near this location"
-            )
+        # Filter by distance (service sets distance_meters key)
+        all_sweeps = [
+            s for s in all_sweeps if s.get("distance_meters", float("inf")) <= 150
+        ]
 
-        # Format response - return all options so user can pick correct side
+        # Sort by distance, limit to 10
+        all_sweeps.sort(key=lambda x: x.get("distance_meters", float("inf")))
+        all_sweeps = all_sweeps[:10]
+
         return {
             "address": coords["address"],
             "latitude": coords["latitude"],
@@ -89,32 +69,6 @@ async def get_sweep_schedule(request: AddressRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/subscribe", response_model=SubscriptionResponse)
-async def subscribe_to_notifications(request: SubscriptionRequest):
-    """
-    Subscribe to notifications for a parking location.
-
-    Saves the location and notification preferences.
-    In production, this would store in a database and set up push notifications.
-    """
-    # TODO: Implement database storage
-    # TODO: Implement push notification subscription (FCM)
-
-    return SubscriptionResponse(
-        success=True,
-        message="Subscription created (demo mode)",
-        subscription_id="demo-123",
-    )
-
-
-@router.get("/schedule/{subscription_id}")
-async def get_subscription_schedule(subscription_id: str):
-    """
-    Get the schedule for a saved subscription.
-    """
-    # TODO: Fetch from database
-    return {
-        "subscription_id": subscription_id,
-        "next_sweep": "Tuesday, March 10, 2026",
-        "sweep_time": "5:00 AM - 6:00 AM",
-    }
+@router.post("/subscribe")
+async def subscribe(request: SubscriptionRequest):
+    return SubscriptionResponse(success=True, message="OK", subscription_id="demo")
