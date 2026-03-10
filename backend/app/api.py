@@ -79,16 +79,7 @@ async def get_sweep_schedule(request: AddressRequest):
             s for s in all_sweeps if s.get("distance_meters", float("inf")) <= 150
         ]
 
-        # Filter by side - use explicit request.side first, then auto-detected side
-        side_to_use = request.side.upper() if request.side else auto_side
-        if side_to_use:
-            all_sweeps = [
-                s
-                for s in all_sweeps
-                if s.get("blockside", "").upper().startswith(side_to_use)
-            ]
-
-        # Filter to ONLY the street the address is on (not nearby streets)
+        # Filter to ONLY the street the address is on (not nearby streets) - DO THIS FIRST
         # Match by street name in the corridor
         matching_street = [
             s
@@ -101,16 +92,36 @@ async def get_sweep_schedule(request: AddressRequest):
             .replace(" ", "")
         ]
 
-        # Use only matching street if found, otherwise fall back to closest
+        # Use only matching street if found
         if matching_street:
             all_sweeps = matching_street
 
-        # Sort by distance and take ONLY the closest segment
+        # Filter by side AFTER corridor filter - only if explicitly requested
+        # Don't auto-filter by detected side - show all options so user can choose
+        if request.side:
+            side_to_use = request.side.upper()
+            all_sweeps = [
+                s
+                for s in all_sweeps
+                if s.get("blockside", "").upper().startswith(side_to_use)
+            ]
+
+        # Sort by distance
         all_sweeps.sort(key=lambda x: x.get("distance_meters", float("inf")))
 
-        # Return single closest segment only
-        if all_sweeps:
+        # If side was explicitly specified, return only the closest match
+        # Otherwise return all segments for this street so user can choose side
+        if request.side and all_sweeps:
             all_sweeps = all_sweeps[:1]
+        elif not request.side:
+            # Show all sides for this street (no limit)
+            # But group by blockside and take closest for each
+            seen_sides = {}
+            for s in all_sweeps:
+                side = s.get("blockside", "")
+                if side not in seen_sides:
+                    seen_sides[side] = s
+            all_sweeps = list(seen_sides.values())
 
         return {
             "address": coords["address"],
