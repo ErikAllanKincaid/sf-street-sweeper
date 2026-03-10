@@ -39,22 +39,50 @@ async def get_sweep_schedule(request: AddressRequest):
 
         coords = await geocoding_service.geocode(request.address)
 
+        # Extract street name from geocoded address (e.g., "Clipper Street" from "301, Clipper Street, ...")
+        address_parts = coords["address"].split(",")
+        street_name = address_parts[1].strip() if len(address_parts) > 1 else ""
+        # Normalize street name (remove "St", "Street", etc. for matching)
+        street_base = (
+            street_name.lower().replace("street", "").replace("st", "").strip()
+        )
+
         # Get sweeps within 150m
         all_sweeps = await sweeping_service.find_all_sweeps(
             coords["latitude"],
             coords["longitude"],
             max_distance=150,
-            limit=50,
+            limit=100,
         )
 
-        # Filter by distance (service sets distance_meters key)
+        # Filter by distance
         all_sweeps = [
             s for s in all_sweeps if s.get("distance_meters", float("inf")) <= 150
         ]
 
-        # Sort by distance, limit to 10
+        # Filter to ONLY the street the address is on (not nearby streets)
+        # Match by street name in the corridor
+        matching_street = [
+            s
+            for s in all_sweeps
+            if street_base
+            in s.get("corridor", "")
+            .lower()
+            .replace("st", "")
+            .replace("street", "")
+            .replace(" ", "")
+        ]
+
+        # Use only matching street if found, otherwise fall back to closest
+        if matching_street:
+            all_sweeps = matching_street
+
+        # Sort by distance and take ONLY the closest segment
         all_sweeps.sort(key=lambda x: x.get("distance_meters", float("inf")))
-        all_sweeps = all_sweeps[:10]
+
+        # Return single closest segment only
+        if all_sweeps:
+            all_sweeps = all_sweeps[:1]
 
         return {
             "address": coords["address"],
