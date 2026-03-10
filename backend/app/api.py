@@ -43,10 +43,28 @@ async def get_sweep_schedule(request: AddressRequest):
         # Extract street name from geocoded address (e.g., "Clipper Street" from "301, Clipper Street, ...")
         address_parts = coords["address"].split(",")
         street_name = address_parts[1].strip() if len(address_parts) > 1 else ""
+
+        # Extract address number for auto side detection
+        address_number = None
+        try:
+            # First part is usually the street number (e.g., "301" from "301, Clipper Street, ...")
+            address_number = int(address_parts[0].strip().split()[0])
+        except (ValueError, IndexError):
+            pass
+
         # Normalize street name (remove "St", "Street", etc. for matching)
         street_base = (
             street_name.lower().replace("street", "").replace("st", "").strip()
         )
+
+        # Auto-detect side from address number (SF convention: even=West, odd=East for N-S streets)
+        auto_side = None
+        if address_number and not request.side:
+            # Even addresses on West side, odd on East side for N-S streets
+            if address_number % 2 == 0:
+                auto_side = "W"
+            else:
+                auto_side = "E"
 
         # Get sweeps within 150m
         all_sweeps = await sweeping_service.find_all_sweeps(
@@ -61,11 +79,13 @@ async def get_sweep_schedule(request: AddressRequest):
             s for s in all_sweeps if s.get("distance_meters", float("inf")) <= 150
         ]
 
-        # Filter by side if specified in request
-        if request.side:
-            side = request.side.upper()
+        # Filter by side - use explicit request.side first, then auto-detected side
+        side_to_use = request.side.upper() if request.side else auto_side
+        if side_to_use:
             all_sweeps = [
-                s for s in all_sweeps if s.get("blockside", "").upper().startswith(side)
+                s
+                for s in all_sweeps
+                if s.get("blockside", "").upper().startswith(side_to_use)
             ]
 
         # Filter to ONLY the street the address is on (not nearby streets)
