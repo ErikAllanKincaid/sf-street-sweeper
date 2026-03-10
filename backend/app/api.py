@@ -61,6 +61,13 @@ async def get_sweep_schedule(request: AddressRequest):
             s for s in all_sweeps if s.get("distance_meters", float("inf")) <= 150
         ]
 
+        # Filter by side if specified in request
+        if request.side:
+            side = request.side.upper()
+            all_sweeps = [
+                s for s in all_sweeps if s.get("blockside", "").upper().startswith(side)
+            ]
+
         # Filter to ONLY the street the address is on (not nearby streets)
         # Match by street name in the corridor
         matching_street = [
