@@ -6,7 +6,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "8765:8000"
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
@@ -21,7 +21,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "19658:80"
+      - "8766:80"
     depends_on:
       backend:
         condition: service_healthy

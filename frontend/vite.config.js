@@ -39,7 +39,7 @@ export default defineConfig(({ mode }) => {
       host: true,
       proxy: {
         '/api': {
-          target: 'http://0.0.0.0:8000',
+          target: "http://0.0.0.0:8765",
           changeOrigin: true
         }
       }
