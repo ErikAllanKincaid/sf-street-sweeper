@@ -333,6 +333,27 @@ curl -X POST http://localhost:8765/api/v1/calendar \
 - Free, no API key required
 - SF-bounding box validation
 
+ 
+
+**Street Sweeping Schedule -- yhqp-riqs:**
+
+- URL: https://data.sfgov.org/City-Infrastructure/Street-Sweeping-Schedule/yhqp-riqs
+
+- Currently only has 220 rows. This is the "undergoing maintenance" version. It is essentially empty/broken right now.
+  
+  The Archived Snapshot (the real data)
+  
+  Archived Street Sweeping data (as of Jan 27, 2025) -- xsry-uuyt
+
+- URL: https://data.sfgov.org/City-Infrastructure/Archived-Street-Sweeping-data-as-of-Jan-27-2025-/xsry-uuyt/data
+
+- Has 37,878 rows -- this is the complete dataset
+
+- Same columns as above. Frozen snapshot, not updated. City warns accuracy "not guaranteed."
+
+- API/CSV download:
+  https://data.sfgov.org/api/views/xsry-uuyt/rows.csv?accessType=DOWNLOAD
+
 ---
 
 ## Development
