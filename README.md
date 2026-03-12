@@ -35,19 +35,19 @@ This app offers:
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│                    Frontend (React/NGINX)              │
-│                         :19658                         │
+│                    Frontend (React/Vite)               │
+│                          :5173                         │
 │  ┌─────────────────────────────────────────────────┐   │
 │  │  Map (Leaflet)                                  │   │
 │  │  Schedule Display                               │   │
 │  │  Saved Locations (localStorage)                 │   │
 │  │  Calendar Integration                           │   │
-│  └─────────────────────────────────────────────────┘   │
+│  │  └─────────────────────────────────────────────────┘   │
 └────────────────────────────────────────────────────────┘
-                         ↕ REST API
+                          ↕ REST API
 ┌────────────────────────────────────────────────────────┐
 │                   Backend (FastAPI)                    │
-│                         :8000                          │
+│                         :8765                          │
 │  ┌─────────────────────────────────────────────────┐   │
 │  │  /health                                        │   │
 │  │  /api/v1/geocode   → Nominatim API              │   │
@@ -61,42 +61,71 @@ This app offers:
 │  │  Shapely STRtree (spatial index)                │   │
 │  └─────────────────────────────────────────────────┘   │
 └────────────────────────────────────────────────────────┘
+
+     Architecture Overview                                                            
+
+     ┌─────────────────────────────────────────────────────────┐                      
+     │                 Frontend (React/Vite)                   │                     
+     │   - React Router (3 pages: Home, Saved, Settings)       │                     
+     │   - Leaflet map with React-Leaflet                      │                     
+     │   - PWA (Service Worker for offline support)            │                     
+     └────────────────────┬────────────────────────────────────┘                      
+                          │ REST API calls                                            
+                          ▼                                                           
+     ┌─────────────────────────────────────────────────────────┐                      
+     │              Backend (FastAPI/Python)                   │                     
+     │  ┌─────────────┬─────────────┬──────────────┐           │                       
+     │  │   main.py   │   api.py    │   models.py  │           │                       
+     │  └──────┬──────┴──────┬──────┴──────┬───────┘           │                       
+     │         │             │             │                   │                      
+     │  ┌──────▼─────────────▼───▼─────────┤                   │                      
+     │  │      Services Layer              │                   │                      
+     │  │  - sf_data.py  - geocoding.py    │                   │                      
+     │  │  - calendar.py                   │                   │                             
+     │  └──────────────────────────────────┘                   │                           
+     └─────────────────────────────────────────────────────────┘  
 ```
 
 ## Starting the Application
 
 ### Option 1: Docker Containers (Recommended)
 
-**Prerequisites:**
+**Prerequisites**:
 
 - Docker installed
 
-**Setup:**
+**Setup**:
 
 ```bash
-# Navigate to project directory
 cd sf-street-sweeper
 
-# Stop any existing containers (cleanup old instances)
-docker stop $(docker ps -aq)
-docker rm $(docker ps -aq)
+# Build backend
+cd backend
+uv pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8765 &
+cd ..
+
+# Build frontend
+cd frontend
+npm install
+cd ..
 
 # Start containers
 docker compose up -d
 ```
 
-**Result:**
+**Result**:
 
-- Frontend: http://localhost:19658
-- Backend API: http://localhost:8000
-- API Docs: http://localhost:8000/docs
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8765
+- API Docs: http://localhost:8765/docs
 
-**Access from another computer:**
+**Access from another computer**:
 Replace `localhost` with your server IP:
 
 ```
-frontend: http://192.168.1.100:19658
-backend:  http://192.168.1.100:8000
+frontend: http://localhost:5173
+backend:  http://localhost:8765
 ```
 
 Check your IP:
@@ -105,7 +134,7 @@ Check your IP:
 hostname -I
 ```
 
-**View logs:**
+**View logs**:
 
 ```bash
 # Both containers
@@ -118,7 +147,7 @@ docker logs sf-street-sweeper-backend-1 -f
 docker logs sf-street-sweeper-frontend-1 -f
 ```
 
-**Stop containers:**
+**Stop containers**:
 
 ```bash
 docker compose down
@@ -167,7 +196,7 @@ npm run dev
 **Access:**
 
 - Frontend: http://localhost:5173 (Vite dev server)
-- Backend: http://localhost:8000
+- Backend: http://localhost:8765
 
 **Production Build:**
 
@@ -250,20 +279,20 @@ Streets use "named weeks" for their 2-week cycle:
 **Health Check:**
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8765/health
 # Returns: {"status": "healthy"}
 ```
 
 **Geocode:**
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/geocode \
+curl -X POST http://localhost:8765/api/v1/geocode \
   -H "Content-Type: application/json" \
   -d '{"address": "301 Clipper Street, San Francisco"}'
 
 # Returns:
 # {
-#   "address": "301, Clipper Street, ...",
+#   "address": "359, Clipper Street, ...",
 #   "latitude": 37.7488919,
 #   "longitude": -122.4319063
 # }
@@ -272,9 +301,9 @@ curl -X POST http://localhost:8000/api/v1/geocode \
 **Get Sweep Schedule:**
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/sweep \
+curl -X POST http://localhost:8765/api/v1/sweep \
   -H "Content-Type: application/json" \
-  -d '{"address": "301 Clipper Street, San Francisco", "side": "South"}'
+  -d '{"address": "359 Clipper Street, San Francisco", "side": "South"}'
 
 # Returns full schedule with multiple segments
 ```
@@ -282,10 +311,10 @@ curl -X POST http://localhost:8000/api/v1/sweep \
 **Create Calendar Event:**
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/calendar \
+curl -X POST http://localhost:8765/api/v1/calendar \
   -H "Content-Type: application/json" \
   -d '{
-    "address": "301 Clipper Street, San Francisco",
+    "address": "359 Clipper Street, San Francisco",
     "corridor": "Clipper St",
     "blockside": "South",
     "limits": "Noe St - Castro St",
@@ -400,10 +429,10 @@ npm run test -- frontend/src/
 
 ```bash
 # Kill process on port 8765
-lsof -ti:8000 | xargs kill -9
+lsof -ti:8765 | xargs kill -9
 
-# Kill process on port 19658
-lsof -ti:19658 | xargs kill -9
+# Kill process on port 5173
+lsof -ti:5173 | xargs kill -9
 ```
 
 ### Container Won't Start
@@ -473,11 +502,7 @@ docker compose up -d
 
 ---
 
-## License
 
-MIT License - see LICENSE file for details.
-
----
 
 ## Acknowledgments
 
