@@ -6,32 +6,14 @@ A San Francisco street sweeping reminder application that helps you know when to
 
 San Francisco sweeps streets on predictable schedules, but the data is scattered across hundreds of street segments. This application aggregates that information and provides a simple interface to find when your parking spot will be cleaned.
 
-### Why This Exists
-
-Existing solutions have limitations:
-
-- **SpotAngels**: Community-driven, requires account, paid features
-- **Street Sweep**: iOS-only, needs internet
-- **Sweep Alarm**: iOS-only
-
-This app offers:
+### This app offers:
 
 - **Offline-first**: Data cached locally
 - **Open Source**: Free forever
 - **Privacy-focused**: No required account
 - **Cross-platform**: Runs anywhere (web, mobile, desktop)
 
-### Competitor Comparison
-
-| Feature       | This App | SpotAngels    | Street Sweep |
-| ------------- | -------- | ------------- | ------------ |
-| Free          | ✅        | ✅ + paid tier | ✅            |
-| Offline       | ✅        | ❌             | ❌            |
-| No Account    | ✅        | ❌             | ✅            |
-| Open Source   | ✅        | ❌             | ❌            |
-| Linux Desktop | ✅        | ❌             | ❌            |
-
-## Architecture
+### Architecture
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -501,8 +483,6 @@ docker compose up -d
 ```
 
 ---
-
-
 
 ## Acknowledgments
 
